@@ -135,11 +135,12 @@ def main(
         total_calls += len(events)
 
         for event in events:
+            label = event.get("label", event.get("label_name"))  # 兼容两种键
             events_records.append({
                 "audio_file": os.path.basename(path),
                 "start_sec": event["start_sec"],
                 "end_sec": event["end_sec"],
-                "label": event["label_name"],
+                "label": label,  # ← 统一成 'label'
                 "confidence": event["confidence"],
             })
 
