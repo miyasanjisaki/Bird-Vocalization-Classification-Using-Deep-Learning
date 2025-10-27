@@ -102,7 +102,7 @@ def predict_audio(
             "start_sec": start / sr,
             "end_sec": end / sr,
             "label_idx": pred_idx,
-            "label_name": idx2label[pred_idx],
+            "label": idx2label[pred_idx],
             "confidence": confidence,
         })
 
@@ -131,16 +131,15 @@ def main(
     for path in audio_paths:
         events = predict_audio(path, model=model, idx2label=idx2label)
         for event in events:
-            counter[event["label_name"]] += 1
+            counter[event["label"]] += 1
         total_calls += len(events)
 
         for event in events:
-            label = event.get("label", event.get("label_name"))  # 兼容两种键
             events_records.append({
                 "audio_file": os.path.basename(path),
                 "start_sec": event["start_sec"],
                 "end_sec": event["end_sec"],
-                "label": label,  # ← 统一成 'label'
+                "label": event["label"],
                 "confidence": event["confidence"],
             })
 
