@@ -7,8 +7,13 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from CNN_LSTM import CNN_LSTM
-from init import trim_silence, highpass_filter, normalize_audio, compute_mel_spectrogram
+from .CNN_LSTM import CNN_LSTM
+from bird_preprocess.init import (
+    trim_silence,
+    highpass_filter,
+    normalize_audio,
+    compute_mel_spectrogram,
+)
 
 
 # -------------------------------
