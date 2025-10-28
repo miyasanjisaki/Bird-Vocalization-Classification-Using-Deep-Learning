@@ -77,7 +77,6 @@ def main():
         events = predict_audio(tmp_path, model=model, idx2label=idx2label)
     finally:
         os.unlink(tmp_path)
-    st.write("调试输出 events:", events)
 
     events_df = pd.DataFrame(events)
     events_df.insert(0, "audio_file", uploaded_file.name)
