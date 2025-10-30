@@ -317,40 +317,7 @@ def example_usage(index_csv: str, batch_size: int = 16, num_workers: int = 4):
         if i >= 2:
             break
 
-index_file = "index.csv"
-save_root = r"D:\鸟类库_processed"
-os.makedirs(save_root, exist_ok=True)
 
-df = pd.read_csv(index_file)
-
-# 按类别处理
-for label in df['label'].unique():
-    df_label = df[df['label'] == label]
-    mels_list = []
-
-    for path in df_label['path']:
-        y, sr = load_audio(path, max_len_sec=1.0)
-        mel = librosa.feature.melspectrogram(
-            y=y, sr=sr,
-            n_fft=1024,
-            hop_length=256,
-            n_mels=128,
-            power=2
-        )
-        mel_db = librosa.power_to_db(mel, ref=np.max)
-        mels_list.append(mel_db)
-
-    # 合并成一个 numpy array
-    mels_array = np.stack(mels_list, axis=0)  # [num_samples, 128, time_frames]
-
-    # 保存
-    save_path = os.path.join(save_root, f"{label}.npz")
-    np.savez_compressed(save_path, mels=mels_array)
-    print(f"{label} 保存完成, shape={mels_array.shape}")
-
-# -------------------------
-# 8) Main (示例：构建 index 并运行 dataloader)
-# -------------------------
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
@@ -362,6 +329,36 @@ if __name__ == '__main__':
 
     if args.build_index:
         build_index(args.root, args.index)
+
+    if args.process:
+        index_file = "index.csv"
+        save_root = r"D:\鸟类库_processed"
+        os.makedirs(save_root, exist_ok=True)
+
+        df = pd.read_csv(index_file)
+
+         # 按类别处理
+        for label in df['label'].unique():
+            df_label = df[df['label'] == label]
+            mels_list = []
+
+            for path in df_label['path']:
+                y, sr = load_audio(path, max_len_sec=1.0)
+                mel = librosa.feature.melspectrogram(
+                    y=y, sr=sr,
+                    n_fft=1024,
+                    hop_length=256,
+                    n_mels=128,
+                    power=2
+                )
+                mel_db = librosa.power_to_db(mel, ref=np.max)
+                mels_list.append(mel_db)
+
+        # 合并成一个 numpy array
+        mels_array = np.stack(mels_list, axis=0)  # [num_samples, 128, time_frames]
+        save_path = os.path.join(save_root, f"{label}.npz")
+        np.savez_compressed(save_path, mels=mels_array)
+        print(f"{label} 保存完成, shape={mels_array.shape}")
 
     print("Creating dataloader from:", args.index)
     example_usage(index_csv=args.index, batch_size=args.batch)

@@ -193,8 +193,8 @@ def main() -> None:
             detail_data, detail_headings = format_table_data(events_df, detail_columns)
             summary_data, summary_headings = format_table_data(summary_df, summary_columns)
 
-            window["-DETAILS-"].update(values=detail_data, headings=detail_headings)
-            window["-SUMMARY-"].update(values=summary_data, headings=summary_headings)
+            window["-DETAILS-"].update(values=detail_data)
+            window["-SUMMARY-"].update(values=summary_data)
             window["-SAVE-SUM-"].update(disabled=False)
             window["-SAVE-DETAIL-"].update(disabled=False)
             window["-STATUS-"].update("识别完成。")
