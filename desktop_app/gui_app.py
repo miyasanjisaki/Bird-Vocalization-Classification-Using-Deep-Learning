@@ -23,13 +23,13 @@ from train.test_CNN_LSTM import (
 )
 
 CUSTOM_THEME = {
-    "BACKGROUND": "#0f172a",
-    "TEXT": "#e2e8f0",
-    "INPUT": "#1e293b",
+    "BACKGROUND": "#0b1120",
+    "TEXT": "#f8fafc",
+    "INPUT": "#111827",
     "TEXT_INPUT": "#e2e8f0",
-    "SCROLL": "#334155",
-    "BUTTON": ("#f8fafc", "#2563eb"),
-    "PROGRESS": ("#2563eb", "#94a3b8"),
+    "SCROLL": "#1f2937",
+    "BUTTON": ("#0b1120", "#38bdf8"),
+    "PROGRESS": ("#38bdf8", "#94a3b8"),
     "BORDER": 0,
     "SLIDER_DEPTH": 0,
     "PROGRESS_DEPTH": 0,
@@ -38,6 +38,17 @@ CUSTOM_THEME = {
 sg.theme_add_new("BirdVision", CUSTOM_THEME)
 sg.theme("BirdVision")
 sg.set_options(font=("Microsoft YaHei", 11))
+
+matplotlib.rcParams["font.sans-serif"] = [
+    "Microsoft YaHei",
+    "SimHei",
+    "Noto Sans CJK SC",
+    "PingFang SC",
+    "WenQuanYi Micro Hei",
+    "Arial Unicode MS",
+    "DejaVu Sans",
+]
+matplotlib.rcParams["axes.unicode_minus"] = False
 
 
 @lru_cache(maxsize=2)
@@ -93,9 +104,9 @@ def build_layout(default_model: str, default_processed_root: str) -> list:
         headings=["鸟种", "叫声次数", "平均置信度"],
         key="-SUMMARY-",
         auto_size_columns=False,
-        col_widths=[20, 10, 12],
+        col_widths=[22, 12, 14],
         justification="left",
-        num_rows=6,
+        num_rows=10,
         enable_events=False,
         expand_x=True,
         expand_y=True,
@@ -107,20 +118,42 @@ def build_layout(default_model: str, default_processed_root: str) -> list:
         headings=["开始(秒)", "结束(秒)", "鸟种", "置信度"],
         key="-DETAILS-",
         auto_size_columns=False,
-        col_widths=[12, 12, 20, 12],
+        col_widths=[14, 14, 24, 12],
         justification="left",
-        num_rows=12,
+        num_rows=16,
         enable_events=False,
         expand_x=True,
         expand_y=True,
         alternating_row_color="#1f2937",
     )
 
-    timeline_frame = sg.Frame(
-        "叫声时间轴",
-        [[sg.Image(key="-TIMELINE-", background_color=CUSTOM_THEME["BACKGROUND"], expand_x=True, expand_y=True)]],
+    timeline_image = sg.Image(
+        key="-TIMELINE-",
+        background_color=CUSTOM_THEME["BACKGROUND"],
         expand_x=True,
         expand_y=True,
+        pad=(0, 0),
+    )
+
+    timeline_column = sg.Column(
+        [[timeline_image]],
+        key="-TIMELINE-COL-",
+        scrollable=True,
+        horizontal_scroll=True,
+        vertical_scroll=False,
+        size=(1200, 340),
+        expand_x=True,
+        expand_y=True,
+        pad=(0, 0),
+        background_color=CUSTOM_THEME["BACKGROUND"],
+    )
+
+    timeline_frame = sg.Frame(
+        "叫声时间轴",
+        [[timeline_column]],
+        expand_x=True,
+        expand_y=True,
+        pad=((0, 0), (10, 0)),
     )
 
     return [
@@ -131,15 +164,15 @@ def build_layout(default_model: str, default_processed_root: str) -> list:
                 [[summary_table]],
                 expand_x=True,
                 expand_y=True,
-            )
-        ],
-        [
+                size=(640, 300),
+            ),
             sg.Frame(
                 "事件明细",
                 [[detail_table]],
                 expand_x=True,
                 expand_y=True,
-            )
+                size=(640, 300),
+            ),
         ],
         [timeline_frame],
         [sg.StatusBar("准备就绪", key="-STATUS-")],
@@ -186,7 +219,12 @@ def build_timeline_image(events_df: pd.DataFrame) -> bytes:
         mid_sec=(timeline_df["start_sec"] + timeline_df["end_sec"]) / 2,
     )
 
-    fig, ax = plt.subplots(figsize=(10, 4), facecolor=CUSTOM_THEME["BACKGROUND"])
+    min_sec = float(timeline_df["start_sec"].min())
+    max_sec = float(timeline_df["end_sec"].max())
+    duration = max(max_sec - min_sec, 1.0)
+    fig_width = max(12.0, duration / 2.5)
+
+    fig, ax = plt.subplots(figsize=(fig_width, 4.6), facecolor=CUSTOM_THEME["BACKGROUND"])
     ax.set_facecolor("#111827")
 
     for _, row in timeline_df.iterrows():
@@ -209,13 +247,19 @@ def build_timeline_image(events_df: pd.DataFrame) -> bytes:
         linewidths=0.6,
     )
 
+    if max_sec == min_sec:
+        ax.set_xlim(min_sec - 0.5, max_sec + 0.5)
+    else:
+        ax.set_xlim(min_sec, max_sec)
+
+    ax.set_ylim(-0.6, max(len(unique_labels) - 0.4, 0.6))
     ax.set_yticks(range(len(unique_labels)))
     ax.set_yticklabels(unique_labels, color=CUSTOM_THEME["TEXT"])
-    ax.set_xlabel("时间 (秒)", color=CUSTOM_THEME["TEXT"])
-    ax.set_ylabel("鸟种", color=CUSTOM_THEME["TEXT"])
+    ax.set_xlabel("时间 (秒)", color=CUSTOM_THEME["TEXT"], labelpad=8)
+    ax.set_ylabel("鸟种", color=CUSTOM_THEME["TEXT"], labelpad=8)
     ax.tick_params(axis="x", colors=CUSTOM_THEME["TEXT"])
     ax.tick_params(axis="y", colors=CUSTOM_THEME["TEXT"])
-    ax.grid(True, axis="x", linestyle="--", alpha=0.25)
+    ax.grid(True, axis="x", linestyle="--", alpha=0.2)
 
     for spine in ax.spines.values():
         spine.set_color("#1f2937")
@@ -232,7 +276,7 @@ def build_timeline_image(events_df: pd.DataFrame) -> bytes:
     fig.savefig(
         buffer,
         format="png",
-        dpi=140,
+        dpi=160,
         bbox_inches="tight",
         facecolor=CUSTOM_THEME["BACKGROUND"],
     )
@@ -249,7 +293,7 @@ def main() -> None:
         "鸟类叫声识别桌面版",
         build_layout(default_model, default_processed_root),
         resizable=True,
-        size=(1100, 780),
+        size=(1380, 920),
         margins=(24, 20),
         element_padding=(10, 10),
         finalize=True,
@@ -258,6 +302,7 @@ def main() -> None:
     window["-SUMMARY-"].expand(True, True, True)
     window["-DETAILS-"].expand(True, True, True)
     window["-TIMELINE-"].expand(True, True)
+    window["-TIMELINE-COL-"].expand(True, True, True)
 
     events_df: pd.DataFrame | None = None
     summary_df: pd.DataFrame | None = None
