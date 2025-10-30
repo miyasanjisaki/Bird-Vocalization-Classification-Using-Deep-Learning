@@ -1,0 +1,2 @@
+PySimpleGUI>=4.60
+pandas>=1.5
