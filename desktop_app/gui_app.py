@@ -8,6 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Tuple
 
+from PIL import Image, ImageTk
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -127,29 +128,17 @@ def build_layout(default_model: str, default_processed_root: str) -> list:
         alternating_row_color="#1f2937",
     )
 
-    timeline_image = sg.Image(
-        key="-TIMELINE-",
+    timeline_canvas = sg.Canvas(
+        key="-TIMELINE-CANVAS-",
         background_color=CUSTOM_THEME["BACKGROUND"],
+        size=(1200, 400),
         expand_x=True,
         expand_y=True,
-        pad=(0, 0),
-    )
-
-    timeline_column = sg.Column(
-        [[timeline_image]],
-        key="-TIMELINE-COL-",
-        scrollable=True,
-        vertical_scroll_only=False,
-        size=(1200, 340),
-        expand_x=True,
-        expand_y=True,
-        pad=(0, 0),
-        background_color=CUSTOM_THEME["BACKGROUND"],
     )
 
     timeline_frame = sg.Frame(
-        "叫声时间轴",
-        [[timeline_column]],
+        "叫声时间轴（可滚动查看）",
+        [[timeline_canvas]],
         expand_x=True,
         expand_y=True,
         pad=((0, 0), (10, 0)),
@@ -221,9 +210,11 @@ def build_timeline_image(events_df: pd.DataFrame) -> bytes:
     min_sec = float(timeline_df["start_sec"].min())
     max_sec = float(timeline_df["end_sec"].max())
     duration = max(max_sec - min_sec, 1.0)
-    fig_width = max(12.0, duration / 2.5)
+    scale = 0.6
+    fig_width = max(8.0, duration / 3.0) * scale
+    height = max(3.0, len(unique_labels) * 0.45) * scale
+    fig, ax = plt.subplots(figsize=(fig_width, height), facecolor=CUSTOM_THEME["BACKGROUND"])
 
-    fig, ax = plt.subplots(figsize=(fig_width, 4.6), facecolor=CUSTOM_THEME["BACKGROUND"])
     ax.set_facecolor("#111827")
 
     for _, row in timeline_df.iterrows():
@@ -254,7 +245,7 @@ def build_timeline_image(events_df: pd.DataFrame) -> bytes:
     ax.set_ylim(-0.6, max(len(unique_labels) - 0.4, 0.6))
     ax.set_yticks(range(len(unique_labels)))
     ax.set_yticklabels(unique_labels, color=CUSTOM_THEME["TEXT"])
-    ax.set_xlabel("时间 (秒)", color=CUSTOM_THEME["TEXT"], labelpad=8)
+    ax.set_xlabel("时间 (s)", color=CUSTOM_THEME["TEXT"], labelpad=8)
     ax.set_ylabel("鸟种", color=CUSTOM_THEME["TEXT"], labelpad=8)
     ax.tick_params(axis="x", colors=CUSTOM_THEME["TEXT"])
     ax.tick_params(axis="y", colors=CUSTOM_THEME["TEXT"])
@@ -268,7 +259,7 @@ def build_timeline_image(events_df: pd.DataFrame) -> bytes:
     cbar.ax.yaxis.set_tick_params(color=CUSTOM_THEME["TEXT"])
     plt.setp(cbar.ax.yaxis.get_ticklabels(), color=CUSTOM_THEME["TEXT"])
 
-    ax.set_title("鸟类叫声时间轴", color=CUSTOM_THEME["TEXT"], fontsize=14, pad=12)
+    ax.set_title("鸟类叫声可视化", color=CUSTOM_THEME["TEXT"], fontsize=14, pad=12)
     fig.tight_layout()
 
     buffer = io.BytesIO()
@@ -284,15 +275,48 @@ def build_timeline_image(events_df: pd.DataFrame) -> bytes:
     return buffer.getvalue()
 
 
+
+def update_timeline_canvas(window, image_bytes: bytes):
+    """在 Canvas 上显示可滚动图像。"""
+    from io import BytesIO
+    img = Image.open(BytesIO(image_bytes))
+    width, height = img.size
+
+    canvas_elem = window["-TIMELINE-CANVAS-"]
+    canvas = canvas_elem.TKCanvas
+
+    # 清除旧图
+    canvas.delete("all")
+
+    # 转成 Tkinter PhotoImage
+    photo_img = ImageTk.PhotoImage(img)
+    canvas.image = photo_img  # 防止被垃圾回收
+
+    # 设定画布大小 & 滚动区域
+    canvas.config(scrollregion=(0, 0, width, height))
+
+    # 绘制图像
+    canvas.create_image(0, 0, anchor="nw", image=photo_img)
+
+    # 添加滚动条（只添加一次）
+    if not hasattr(canvas_elem, "_scrollbars_attached"):
+        vsb = sg.tk.Scrollbar(canvas, orient="vertical", command=canvas.yview)
+        hsb = sg.tk.Scrollbar(canvas, orient="horizontal", command=canvas.xview)
+        canvas.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        vsb.pack(side="right", fill="y")
+        hsb.pack(side="bottom", fill="x")
+        canvas_elem._scrollbars_attached = True
+
+
 def main() -> None:
     default_model = Path(DEFAULT_MODEL_PATH).as_posix()
     default_processed_root = Path(DEFAULT_PROCESSED_ROOT).as_posix()
 
     window = sg.Window(
-        "鸟类叫声识别桌面版",
+        "鸟类叫声识别",
         build_layout(default_model, default_processed_root),
         resizable=True,
-        size=(1380, 920),
+        size=(1600, 1000),
         margins=(24, 20),
         element_padding=(10, 10),
         finalize=True,
@@ -300,8 +324,7 @@ def main() -> None:
 
     window["-SUMMARY-"].expand(True, True, True)
     window["-DETAILS-"].expand(True, True, True)
-    window["-TIMELINE-"].expand(True, True)
-    window["-TIMELINE-COL-"].expand(True, True, True)
+    window["-TIMELINE-CANVAS-"].expand(True, True)
 
     events_df: pd.DataFrame | None = None
     summary_df: pd.DataFrame | None = None
@@ -340,7 +363,7 @@ def main() -> None:
                 window["-SAVE-SUM-"].update(disabled=True)
                 window["-SAVE-DETAIL-"].update(disabled=True)
                 window["-SAVE-FIG-"].update(disabled=True)
-                window["-TIMELINE-"].update(data=None)
+                window["-TIMELINE-CANVAS-"].update(data=None)
                 timeline_image = None
                 continue
 
@@ -355,7 +378,7 @@ def main() -> None:
                 window["-SAVE-SUM-"].update(disabled=True)
                 window["-SAVE-DETAIL-"].update(disabled=True)
                 window["-SAVE-FIG-"].update(disabled=True)
-                window["-TIMELINE-"].update(data=None)
+                window["-TIMELINE-CANVAS-"].update(data=None)
                 timeline_image = None
                 continue
 
@@ -381,11 +404,11 @@ def main() -> None:
             window["-SAVE-DETAIL-"].update(disabled=False)
             try:
                 timeline_image = build_timeline_image(events_df)
-                window["-TIMELINE-"].update(data=timeline_image)
+                update_timeline_canvas(window, timeline_image)
                 window["-SAVE-FIG-"].update(disabled=False)
             except Exception as exc:  # pylint: disable=broad-except
                 timeline_image = None
-                window["-TIMELINE-"].update(data=None)
+                window["-TIMELINE-CANVAS-"].update(data=None)
                 window["-SAVE-FIG-"].update(disabled=True)
                 window["-STATUS-"].update(f"识别完成，但时间轴生成失败: {exc}")
             else:
