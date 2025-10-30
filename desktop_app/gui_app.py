@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import io
 import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Tuple
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import pandas as pd
 import PySimpleGUI as sg
 
@@ -18,7 +22,22 @@ from train.test_CNN_LSTM import (
     predict_audio,
 )
 
-sg.theme("SystemDefaultForReal")
+CUSTOM_THEME = {
+    "BACKGROUND": "#0f172a",
+    "TEXT": "#e2e8f0",
+    "INPUT": "#1e293b",
+    "TEXT_INPUT": "#e2e8f0",
+    "SCROLL": "#334155",
+    "BUTTON": ("#f8fafc", "#2563eb"),
+    "PROGRESS": ("#2563eb", "#94a3b8"),
+    "BORDER": 0,
+    "SLIDER_DEPTH": 0,
+    "PROGRESS_DEPTH": 0,
+}
+
+sg.theme_add_new("BirdVision", CUSTOM_THEME)
+sg.theme("BirdVision")
+sg.set_options(font=("Microsoft YaHei", 11))
 
 
 @lru_cache(maxsize=2)
@@ -29,41 +48,87 @@ def _load_detector(model_path: str, processed_root: str):
 
 
 def build_layout(default_model: str, default_processed_root: str) -> list:
+    control_frame = sg.Frame(
+        "模型与数据",
+        [
+            [
+                sg.Text("模型权重", size=(10, 1)),
+                sg.Input(default_model, key="-MODEL-", expand_x=True),
+                sg.FileBrowse("浏览", file_types=(("PyTorch 模型", "*.pth"),)),
+            ],
+            [
+                sg.Text("标签目录", size=(10, 1)),
+                sg.Input(default_processed_root, key="-LABELS-", expand_x=True),
+                sg.FolderBrowse("浏览"),
+            ],
+            [
+                sg.Text("音频文件", size=(10, 1)),
+                sg.Input(key="-AUDIO-", expand_x=True),
+                sg.FileBrowse("浏览", file_types=(("音频文件", "*.wav;*.mp3;*.flac"),)),
+            ],
+            [
+                sg.Text("置信度阈值", size=(10, 1)),
+                sg.Slider(
+                    range=(0.0, 1.0),
+                    orientation="h",
+                    resolution=0.05,
+                    default_value=0.0,
+                    expand_x=True,
+                    key="-THRESH-",
+                ),
+            ],
+            [
+                sg.Button("识别", key="-RUN-", size=(12, 1)),
+                sg.Button("保存统计", key="-SAVE-SUM-", disabled=True),
+                sg.Button("保存明细", key="-SAVE-DETAIL-", disabled=True),
+                sg.Button("保存时间轴", key="-SAVE-FIG-", disabled=True),
+                sg.Button("退出", key="-EXIT-"),
+            ],
+        ],
+        expand_x=True,
+    )
+
+    summary_table = sg.Table(
+        values=[],
+        headings=["鸟种", "叫声次数", "平均置信度"],
+        key="-SUMMARY-",
+        auto_size_columns=False,
+        col_widths=[20, 10, 12],
+        justification="left",
+        num_rows=6,
+        enable_events=False,
+        expand_x=True,
+        expand_y=True,
+        alternating_row_color="#1f2937",
+    )
+
+    detail_table = sg.Table(
+        values=[],
+        headings=["开始(秒)", "结束(秒)", "鸟种", "置信度"],
+        key="-DETAILS-",
+        auto_size_columns=False,
+        col_widths=[12, 12, 20, 12],
+        justification="left",
+        num_rows=12,
+        enable_events=False,
+        expand_x=True,
+        expand_y=True,
+        alternating_row_color="#1f2937",
+    )
+
+    timeline_frame = sg.Frame(
+        "叫声时间轴",
+        [[sg.Image(key="-TIMELINE-", background_color=CUSTOM_THEME["BACKGROUND"], expand_x=True, expand_y=True)]],
+        expand_x=True,
+        expand_y=True,
+    )
+
     return [
-        [sg.Text("模型权重"), sg.Input(default_model, key="-MODEL-", size=(45, 1)), sg.FileBrowse("浏览", file_types=(("PyTorch 模型", "*.pth"),))],
-        [sg.Text("标签目录"), sg.Input(default_processed_root, key="-LABELS-", size=(45, 1)), sg.FolderBrowse("浏览")],
-        [sg.Text("音频文件"), sg.Input(key="-AUDIO-", size=(45, 1)), sg.FileBrowse("浏览", file_types=(("音频文件", "*.wav;*.mp3;*.flac"),))],
-        [
-            sg.Text("置信度阈值"),
-            sg.Slider(
-                range=(0.0, 1.0),
-                orientation="h",
-                resolution=0.05,
-                default_value=0.0,
-                size=(30, 15),
-                key="-THRESH-",
-            ),
-        ],
-        [
-            sg.Button("识别", key="-RUN-", size=(10, 1)),
-            sg.Button("保存统计", key="-SAVE-SUM-", disabled=True),
-            sg.Button("保存明细", key="-SAVE-DETAIL-", disabled=True),
-            sg.Button("退出", key="-EXIT-")
-        ],
+        [control_frame],
         [
             sg.Frame(
                 "统计信息",
-                [[
-                    sg.Table(
-                        values=[],
-                        headings=["鸟种", "叫声次数", "平均置信度"],
-                        key="-SUMMARY-",
-                        auto_size_columns=True,
-                        justification="left",
-                        num_rows=6,
-                        enable_events=False,
-                    )
-                ]],
+                [[summary_table]],
                 expand_x=True,
                 expand_y=True,
             )
@@ -71,21 +136,12 @@ def build_layout(default_model: str, default_processed_root: str) -> list:
         [
             sg.Frame(
                 "事件明细",
-                [[
-                    sg.Table(
-                        values=[],
-                        headings=["开始(秒)", "结束(秒)", "鸟种", "置信度"],
-                        key="-DETAILS-",
-                        auto_size_columns=True,
-                        justification="left",
-                        num_rows=12,
-                        enable_events=False,
-                    )
-                ]],
+                [[detail_table]],
                 expand_x=True,
                 expand_y=True,
             )
         ],
+        [timeline_frame],
         [sg.StatusBar("准备就绪", key="-STATUS-")],
     ]
 
@@ -118,6 +174,73 @@ def format_table_data(
     return data, headings
 
 
+def build_timeline_image(events_df: pd.DataFrame) -> bytes:
+    """Create a timeline visualization for detected events."""
+
+    timeline_df = events_df.sort_values(["start_sec", "label"]).reset_index(drop=True)
+    unique_labels = list(dict.fromkeys(timeline_df["label"].tolist()))
+    label_to_y = {label: idx for idx, label in enumerate(unique_labels)}
+
+    timeline_df = timeline_df.assign(
+        y=timeline_df["label"].map(label_to_y),
+        mid_sec=(timeline_df["start_sec"] + timeline_df["end_sec"]) / 2,
+    )
+
+    fig, ax = plt.subplots(figsize=(10, 4), facecolor=CUSTOM_THEME["BACKGROUND"])
+    ax.set_facecolor("#111827")
+
+    for _, row in timeline_df.iterrows():
+        ax.hlines(
+            y=row["y"],
+            xmin=row["start_sec"],
+            xmax=row["end_sec"],
+            colors="#38bdf8",
+            linewidth=6,
+            alpha=0.6,
+        )
+
+    scatter = ax.scatter(
+        timeline_df["mid_sec"],
+        timeline_df["y"],
+        c=timeline_df["confidence"],
+        cmap="viridis",
+        s=120,
+        edgecolors="#0f172a",
+        linewidths=0.6,
+    )
+
+    ax.set_yticks(range(len(unique_labels)))
+    ax.set_yticklabels(unique_labels, color=CUSTOM_THEME["TEXT"])
+    ax.set_xlabel("时间 (秒)", color=CUSTOM_THEME["TEXT"])
+    ax.set_ylabel("鸟种", color=CUSTOM_THEME["TEXT"])
+    ax.tick_params(axis="x", colors=CUSTOM_THEME["TEXT"])
+    ax.tick_params(axis="y", colors=CUSTOM_THEME["TEXT"])
+    ax.grid(True, axis="x", linestyle="--", alpha=0.25)
+
+    for spine in ax.spines.values():
+        spine.set_color("#1f2937")
+
+    cbar = fig.colorbar(scatter, ax=ax, pad=0.01)
+    cbar.set_label("置信度", color=CUSTOM_THEME["TEXT"])
+    cbar.ax.yaxis.set_tick_params(color=CUSTOM_THEME["TEXT"])
+    plt.setp(cbar.ax.yaxis.get_ticklabels(), color=CUSTOM_THEME["TEXT"])
+
+    ax.set_title("鸟类叫声时间轴", color=CUSTOM_THEME["TEXT"], fontsize=14, pad=12)
+    fig.tight_layout()
+
+    buffer = io.BytesIO()
+    fig.savefig(
+        buffer,
+        format="png",
+        dpi=140,
+        bbox_inches="tight",
+        facecolor=CUSTOM_THEME["BACKGROUND"],
+    )
+    plt.close(fig)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 def main() -> None:
     default_model = Path(DEFAULT_MODEL_PATH).as_posix()
     default_processed_root = Path(DEFAULT_PROCESSED_ROOT).as_posix()
@@ -126,10 +249,19 @@ def main() -> None:
         "鸟类叫声识别桌面版",
         build_layout(default_model, default_processed_root),
         resizable=True,
+        size=(1100, 780),
+        margins=(24, 20),
+        element_padding=(10, 10),
+        finalize=True,
     )
+
+    window["-SUMMARY-"].expand(True, True, True)
+    window["-DETAILS-"].expand(True, True, True)
+    window["-TIMELINE-"].expand(True, True)
 
     events_df: pd.DataFrame | None = None
     summary_df: pd.DataFrame | None = None
+    timeline_image: bytes | None = None
 
     while True:
         event, values = window.read()
@@ -163,6 +295,9 @@ def main() -> None:
                 window["-SUMMARY-"].update(values=[])
                 window["-SAVE-SUM-"].update(disabled=True)
                 window["-SAVE-DETAIL-"].update(disabled=True)
+                window["-SAVE-FIG-"].update(disabled=True)
+                window["-TIMELINE-"].update(data=None)
+                timeline_image = None
                 continue
 
             events_df.insert(0, "audio_file", Path(audio_path).name)
@@ -175,6 +310,9 @@ def main() -> None:
                 window["-SUMMARY-"].update(values=[])
                 window["-SAVE-SUM-"].update(disabled=True)
                 window["-SAVE-DETAIL-"].update(disabled=True)
+                window["-SAVE-FIG-"].update(disabled=True)
+                window["-TIMELINE-"].update(data=None)
+                timeline_image = None
                 continue
 
             summary_df = make_summary(events_df)
@@ -190,14 +328,24 @@ def main() -> None:
                 "平均置信度": ("float", "平均置信度"),
             }
 
-            detail_data, detail_headings = format_table_data(events_df, detail_columns)
-            summary_data, summary_headings = format_table_data(summary_df, summary_columns)
+            detail_data, _ = format_table_data(events_df, detail_columns)
+            summary_data, _ = format_table_data(summary_df, summary_columns)
 
             window["-DETAILS-"].update(values=detail_data)
             window["-SUMMARY-"].update(values=summary_data)
             window["-SAVE-SUM-"].update(disabled=False)
             window["-SAVE-DETAIL-"].update(disabled=False)
-            window["-STATUS-"].update("识别完成。")
+            try:
+                timeline_image = build_timeline_image(events_df)
+                window["-TIMELINE-"].update(data=timeline_image)
+                window["-SAVE-FIG-"].update(disabled=False)
+            except Exception as exc:  # pylint: disable=broad-except
+                timeline_image = None
+                window["-TIMELINE-"].update(data=None)
+                window["-SAVE-FIG-"].update(disabled=True)
+                window["-STATUS-"].update(f"识别完成，但时间轴生成失败: {exc}")
+            else:
+                window["-STATUS-"].update("识别完成。")
 
         if event == "-SAVE-SUM-" and summary_df is not None and not summary_df.empty:
             file_path = sg.popup_get_file(
@@ -220,6 +368,18 @@ def main() -> None:
             if file_path:
                 events_df.to_csv(file_path, index=False, encoding="utf-8-sig")
                 window["-STATUS-"].update(f"事件明细已保存到 {file_path}")
+
+        if event == "-SAVE-FIG-" and timeline_image:
+            file_path = sg.popup_get_file(
+                "保存时间轴为...",
+                save_as=True,
+                default_extension=".png",
+                file_types=(("PNG 图片", "*.png"),),
+            )
+            if file_path:
+                with open(file_path, "wb") as file:
+                    file.write(timeline_image)
+                window["-STATUS-"].update(f"时间轴图片已保存到 {file_path}")
 
     window.close()
 
